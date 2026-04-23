@@ -163,7 +163,7 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
 function checkPw(){
   const v=document.getElementById('pw-input').value;
   const h=Array.from(new TextEncoder().encode(v)).reduce((a,b)=>Math.imul(31,a)+b|0,0).toString(16);
-  if(h==='fed19158'){
+  if(h==='-12e6ea8'){
     sessionStorage.setItem('cc_auth','1');
     document.getElementById('pw-screen').style.display='none';
   } else {
