@@ -106,6 +106,38 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
 </style>
 </head>
 <body>
+<div id="pw-screen" style="position:fixed;inset:0;background:#F4F6F9;z-index:9999;display:flex;align-items:center;justify-content:center">
+<div style="background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:16px;padding:36px 32px;width:320px;box-shadow:0 4px 24px rgba(0,0,0,0.08);text-align:center">
+  <div style="font-size:28px;margin-bottom:12px">💳</div>
+  <div style="font-size:17px;font-weight:600;color:#1F3864;margin-bottom:4px">CC Tracker</div>
+  <div style="font-size:13px;color:#6b7280;margin-bottom:24px">請輸入密碼</div>
+  <input id="pw-input" type="password" placeholder="密碼"
+    style="width:100%;padding:10px 14px;border:1px solid rgba(0,0,0,0.13);border-radius:9px;font-size:14px;font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box"
+    onkeydown="if(event.key==='Enter')checkPw()">
+  <div id="pw-err" style="font-size:12px;color:#C92A2A;margin-bottom:10px;min-height:18px"></div>
+  <button onclick="checkPw()" style="width:100%;background:#1F3864;color:#fff;border:none;padding:11px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">進入</button>
+</div>
+</div>
+<script>
+(function(){
+  if(sessionStorage.getItem('cc_auth')==='1')
+    document.getElementById('pw-screen').style.display='none';
+  else
+    setTimeout(()=>document.getElementById('pw-input').focus(),100);
+})();
+function checkPw(){
+  const v=document.getElementById('pw-input').value;
+  const h=Array.from(new TextEncoder().encode(v)).reduce((a,b)=>Math.imul(31,a)+b|0,0).toString(16);
+  if(h==='-12e6ea8'){
+    sessionStorage.setItem('cc_auth','1');
+    document.getElementById('pw-screen').style.display='none';
+  } else {
+    document.getElementById('pw-err').textContent='密碼錯誤，請再試';
+    document.getElementById('pw-input').value='';
+    document.getElementById('pw-input').focus();
+  }
+}
+</script>
 <div class="hdr">
   <div style="display:flex;align-items:center;gap:14px">
     <div class="logo">CC<span>/</span>Tracker</div>
@@ -122,6 +154,7 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
     <button class="tab" onclick="switchTab('chart')">支出分析</button>
     <button class="tab" onclick="switchTab('uploads')">上傳記錄</button>
     <button class="tab" onclick="switchTab('settings')">信用卡設定</button>
+    <button class="tab" onclick="switchTab('calendar')">📅 日曆</button>
   </div>
 
   <!-- ① 總覽 -->
@@ -206,6 +239,13 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
           <button class="btn primary" onclick="openAddTxn()">＋ 新增</button>
           <button class="btn" onclick="openCatModal()">⚙ 類別</button>
         </div>
+        <div class="frow" style="margin-top:7px">
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap">入庫日期：</span>
+          <input class="inp" type="date" id="tx-date-from" onchange="renderTxn()" style="width:130px;font-size:12px" placeholder="由">
+          <span style="font-size:11px;color:var(--muted)">至</span>
+          <input class="inp" type="date" id="tx-date-to" onchange="renderTxn()" style="width:130px;font-size:12px" placeholder="至">
+          <button class="btn sm" onclick="clearDateFilter()" title="清除日期篩選">✕ 清除</button>
+        </div>
       </div>
       <div class="tbl-wrap"><table>
         <thead><tr>
@@ -251,6 +291,12 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
 
   <!-- ⑤ 上傳記錄 -->
   <div id="tab-uploads" class="tab-pane">
+    <!-- Upload Status Summary -->
+    <div class="sec" style="margin-bottom:16px">
+      <div style="padding:14px 18px" id="upload-status-section">
+        <div class="loading"><span class="spin"></span>載入中...</div>
+      </div>
+    </div>
     <div class="sec">
       <div class="sec-hdr">
         <div class="sec-title">已上傳 Statements <span class="badge-cnt" id="up-cnt">0</span></div>
@@ -278,11 +324,13 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
       </div>
       <div style="padding:16px 18px">
         <p style="font-size:12px;color:var(--muted);margin-bottom:14px">自訂每張卡嘅顯示名稱同卡號。未設定嘅卡會自動從系統識別碼提取名稱同卡尾。</p>
-        <div style="display:grid;grid-template-columns:22% 22% 11% 14% 1fr 60px;gap:8px;padding:7px 14px;background:var(--surface2);border-radius:8px;margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:18% 18% 8% 10% 7% 7% 1fr 60px;gap:8px;padding:7px 14px;background:var(--surface2);border-radius:8px;margin-bottom:8px">
           <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">系統識別碼</div>
           <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">顯示名稱</div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">卡尾號碼</div>
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">卡尾</div>
           <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">銀行</div>
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">結單日</div>
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">到期日</div>
           <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">備註</div>
           <div></div>
         </div>
@@ -301,6 +349,44 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
     </div>
   </div>
 </div>
+
+  <!-- ⑦ Calendar -->
+  <div id="tab-calendar" class="tab-pane">
+    <div class="sec">
+      <div class="sec-hdr">
+        <div class="sec-title" id="cal-title">📅 日曆</div>
+        <div class="frow">
+          <button class="btn" onclick="calPrev()">← 上月</button>
+          <button class="btn" onclick="calToday()">今天</button>
+          <button class="btn" onclick="calNext()">下月 →</button>
+        </div>
+      </div>
+      <div style="padding:10px 18px 0;display:flex;gap:16px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:10px;height:10px;border-radius:50%;background:#2E75B6;flex-shrink:0"></div>結單日</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:10px;height:10px;border-radius:50%;background:#C92A2A;flex-shrink:0"></div>到期日（未還）</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:10px;height:10px;border-radius:50%;background:#1A7A4A;flex-shrink:0"></div>到期日（已還）</div>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px">
+          <div style="text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:6px 0">一</div>
+          <div style="text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:6px 0">二</div>
+          <div style="text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:6px 0">三</div>
+          <div style="text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:6px 0">四</div>
+          <div style="text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:6px 0">五</div>
+          <div style="text-align:center;font-size:11px;font-weight:600;color:#C47D0E;padding:6px 0">六</div>
+          <div style="text-align:center;font-size:11px;font-weight:600;color:#C92A2A;padding:6px 0">日</div>
+        </div>
+        <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
+      </div>
+      <div id="cal-detail" style="display:none;margin:0 18px 16px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:14px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:13px;font-weight:600" id="cal-detail-date"></div>
+          <button class="btn sm" onclick="document.getElementById('cal-detail').style.display='none'">✕</button>
+        </div>
+        <div id="cal-detail-body"></div>
+      </div>
+    </div>
+  </div>
 
 <!-- 新增交易 Modal -->
 <div class="modal-bg" id="add-txn-modal">
@@ -674,6 +760,10 @@ function renderTxn(){
   if(cf)filteredTxns=filteredTxns.filter(t=>t.card_name===cf);
   if(cat)filteredTxns=filteredTxns.filter(t=>t.category===cat);
   if(srcf)filteredTxns=filteredTxns.filter(t=>(t.expense_source||'personal')===srcf);
+  const dfrom=document.getElementById('tx-date-from').value;
+  const dto=document.getElementById('tx-date-to').value;
+  if(dfrom)filteredTxns=filteredTxns.filter(t=>t.created_at&&t.created_at.slice(0,10)>=dfrom);
+  if(dto)filteredTxns=filteredTxns.filter(t=>t.created_at&&t.created_at.slice(0,10)<=dto);
   filteredTxns.sort((a,b)=>(b.trans_date||'')>(a.trans_date||'')?1:-1);
   document.getElementById('tx-cnt').textContent=filteredTxns.length;
   if(!filteredTxns.length){document.getElementById('tx-body').innerHTML='<tr><td colspan="10" class="empty">沒有記錄</td></tr>';return;}
@@ -742,7 +832,7 @@ function cancelTxnEdit(id){
 async function saveTxnEdit(id){
   const t=allTxns.find(r=>r.id===id);if(!t)return;
   const trans_date=document.getElementById('te-tdate-'+id).value.trim();
-  const post_date=document.getElementById('te-pdate-'+id).value.trim();
+  const post_date=t.post_date||trans_date;
   const description=document.getElementById('te-desc-'+id).value.trim();
   const card_name=document.getElementById('te-card-'+id).value;
   const amount=parseFloat(document.getElementById('te-amt-'+id).value);
@@ -767,6 +857,12 @@ async function saveTxnEdit(id){
     if(row)row.outerHTML=renderTxnRow(t,false);
     populateFilters();renderChart();toast('已儲存');
   } else toast('儲存失敗','err');
+}
+
+function clearDateFilter(){
+  document.getElementById('tx-date-from').value='';
+  document.getElementById('tx-date-to').value='';
+  renderTxn();
 }
 
 /* ── Add Transaction ── */
@@ -886,11 +982,14 @@ function renderSettings(){
   if(!keys.length){document.getElementById('settings-grid').innerHTML='<div class="empty">暫無信用卡資料</div>';return;}
   document.getElementById('settings-grid').innerHTML=keys.map((key,i)=>{
     const ex=allSettings.find(s=>s.card_key===key)||{};
-    return `<div class="srow" id="srow-${i}">
+    const autoDay=inferStatementDay(key);
+    return `<div class="srow" id="srow-${i}" style="grid-template-columns:18% 18% 8% 10% 7% 7% 1fr 60px">
       <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${key}">${key}</div>
       <input class="inp" id="sn-name-${i}" value="${ex.display_name||''}" placeholder="顯示名稱" style="font-size:12px">
-      <input class="inp" id="sn-last4-${i}" value="${ex.card_last4||''}" placeholder="卡尾號碼" style="font-size:12px">
+      <input class="inp" id="sn-last4-${i}" value="${ex.card_last4||''}" placeholder="卡尾" style="font-size:12px">
       <input class="inp" id="sn-bank-${i}" value="${ex.bank||''}" placeholder="銀行" style="font-size:12px">
+      <input class="inp" id="sn-stmtday-${i}" value="${ex.statement_day||''}" placeholder="${autoDay||'幾號'}" type="number" min="1" max="31" style="font-size:12px" title="每月結單日（自動推算：${autoDay||'未知'}號）">
+      <input class="inp" id="sn-dueday-${i}" value="${ex.due_day||''}" placeholder="幾號" type="number" min="1" max="31" style="font-size:12px">
       <input class="inp" id="sn-notes-${i}" value="${ex.notes||''}" placeholder="備註" style="font-size:12px">
       <button class="btn sm primary" onclick="saveSetting(${i},'${key.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${ex.id||''}')">儲存</button>
     </div>`;
@@ -900,8 +999,10 @@ async function saveSetting(i,card_key,existing_id){
   const display_name=document.getElementById(`sn-name-${i}`).value.trim();
   const card_last4=document.getElementById(`sn-last4-${i}`).value.trim();
   const bank=document.getElementById(`sn-bank-${i}`).value.trim();
+  const statement_day=parseInt(document.getElementById(`sn-stmtday-${i}`).value)||null;
+  const due_day=parseInt(document.getElementById(`sn-dueday-${i}`).value)||null;
   const notes=document.getElementById(`sn-notes-${i}`).value.trim();
-  const payload={card_key,display_name,card_last4,bank,notes,updated_at:new Date().toISOString()};
+  const payload={card_key,display_name,card_last4,bank,statement_day,due_day,notes,updated_at:new Date().toISOString()};
   let r,newId=existing_id;
   if(existing_id){r=await fetch(`${SUPA}/card_settings?id=eq.${existing_id}`,{method:'PATCH',headers:WH,body:JSON.stringify(payload)});}
   else{r=await fetch(`${SUPA}/card_settings`,{method:'POST',headers:WR,body:JSON.stringify(payload)});if(r.ok){const d=await r.json();if(d[0])newId=d[0].id;}}
@@ -1215,6 +1316,275 @@ async function executeImport(){
   toast(fail>0?`匯入 ${ok} 筆，${fail} 筆失敗`:`成功匯入 ${ok} 筆交易`);
 }
 
+
+
+/* ── Infer Statement Day from history ── */
+function inferStatementDay(card_name){
+  const dates=allCards
+    .filter(c=>c.card_name===card_name&&c.statement_date)
+    .map(c=>new Date(c.statement_date).getDate())
+    .filter(d=>!isNaN(d));
+  if(!dates.length)return null;
+  // Find mode
+  const freq={};dates.forEach(d=>freq[d]=(freq[d]||0)+1);
+  return parseInt(Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0]);
+}
+
+/* ── Auto-fill statement_day for all cards without one ── */
+async function autoFillStatementDays(){
+  let filled=0;
+  for(const s of allSettings){
+    if(s.statement_day)continue;
+    const day=inferStatementDay(s.card_key);
+    if(!day)continue;
+    await fetch(`${SUPA}/card_settings?id=eq.${s.id}`,{method:'PATCH',headers:WH,body:JSON.stringify({statement_day:day})});
+    s.statement_day=day;filled++;
+    await new Promise(r=>setTimeout(r,60));
+  }
+  if(filled>0){renderSettings();renderUploadStatus();}
+  toast(filled>0?`自動填入 ${filled} 張卡嘅結單日`:'所有卡已有結單日設定');
+}
+
+/* ── Upload Status Summary ── */
+function renderUploadStatus(){
+  const el=document.getElementById('upload-status-section');
+  if(!el)return;
+
+  const today=new Date();
+  const yyyymm=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const todayDay=today.getDate();
+
+  // Get all known cards from card_settings + credit_cards
+  const allCardKeys=[...new Set([
+    ...allSettings.map(s=>s.card_key),
+    ...allCards.map(c=>c.card_name)
+  ])].sort();
+
+  // Latest statement_month per card from credit_cards
+  const latestMonth={};
+  allCards.forEach(c=>{
+    if(!latestMonth[c.card_name]||c.statement_month>latestMonth[c.card_name])
+      latestMonth[c.card_name]=c.statement_month;
+  });
+
+  const rows=allCardKeys.map(key=>{
+    const s=allSettings.find(x=>x.card_key===key)||{};
+    const dn=getDisplayName(key);
+    const l4=getDisplayLast4(key);
+    const stmtDay=s.statement_day||inferStatementDay(key);
+    const last=latestMonth[key]||'—';
+
+    // Determine status
+    let status,statusColor,statusBg;
+    if(!stmtDay){
+      // No statement day known — just show last upload
+      const monthsAgo=last==='—'?99:monthDiff(last,yyyymm);
+      if(monthsAgo===0){status='✅ 本月已上傳';statusColor='var(--green)';statusBg='var(--green-bg)';}
+      else if(monthsAgo===1){status='⚠️ 上月記錄';statusColor='var(--amber)';statusBg='var(--amber-bg)';}
+      else{status='🔴 建議檢查';statusColor='var(--red)';statusBg='var(--red-bg)';}
+    } else {
+      // We know the statement day
+      const stmtPassed=todayDay>=stmtDay; // has this month's statement date passed?
+      const hasThisMonth=last===yyyymm;
+      const monthsAgo=last==='—'?99:monthDiff(last,yyyymm);
+
+      if(hasThisMonth){
+        status='✅ 本月已上傳';statusColor='var(--green)';statusBg='var(--green-bg)';
+      } else if(!stmtPassed){
+        status=`⏳ 結單日：${stmtDay}號（未到）`;statusColor='var(--muted)';statusBg='var(--surface2)';
+      } else if(monthsAgo<=1){
+        status='⚠️ 結單日已過，未上傳';statusColor='var(--amber)';statusBg='var(--amber-bg)';
+      } else {
+        status='🔴 多期未上傳';statusColor='var(--red)';statusBg='var(--red-bg)';
+      }
+    }
+
+    return {key,dn,l4,stmtDay,last,status,statusColor,statusBg};
+  });
+
+  // Sort: red first, then amber, then ok
+  const order={'🔴':0,'⚠️':1,'⏳':2,'✅':3};
+  rows.sort((a,b)=>{
+    const ao=Object.keys(order).findIndex(k=>a.status.startsWith(k));
+    const bo=Object.keys(order).findIndex(k=>b.status.startsWith(k));
+    return ao-bo;
+  });
+
+  el.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:13px;font-weight:600">📋 ${today.getFullYear()}年${today.getMonth()+1}月 結單上傳狀態</div>
+      <button class="btn sm" onclick="autoFillStatementDays()" title="從歷史結單日期自動推算各卡結單日">⚡ 自動推算結單日</button>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr>
+        <th style="padding:8px 12px;text-align:left;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;width:22%">信用卡</th>
+        <th style="padding:8px 12px;text-align:left;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;width:8%">結單日</th>
+        <th style="padding:8px 12px;text-align:left;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;width:12%">最後上傳</th>
+        <th style="padding:8px 12px;text-align:left;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">狀態</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r=>`<tr>
+          <td style="padding:9px 12px;border-bottom:1px solid var(--border)">
+            <div style="font-weight:500">${r.dn}</div>
+            <div style="font-size:11px;color:var(--muted)">${r.l4?'···'+r.l4:''}</div>
+          </td>
+          <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:12px">
+            ${r.stmtDay?r.stmtDay+'號':'<span style="color:var(--muted)">未設定</span>'}
+          </td>
+          <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">${r.last}</td>
+          <td style="padding:9px 12px;border-bottom:1px solid var(--border)">
+            <span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;background:${r.statusBg};color:${r.statusColor}">${r.status}</span>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+function monthDiff(from, to){
+  // e.g. from='2026-03', to='2026-04' → 1
+  if(!from||!to)return 99;
+  const [fy,fm]=from.split('-').map(Number);
+  const [ty,tm]=to.split('-').map(Number);
+  return (ty-fy)*12+(tm-fm);
+}
+
+/* ── Calendar ── */
+let calYear=new Date().getFullYear(), calMonth=new Date().getMonth();
+
+function calPrev(){calMonth--;if(calMonth<0){calMonth=11;calYear--;}renderCalendar();}
+function calNext(){calMonth++;if(calMonth>11){calMonth=0;calYear++;}renderCalendar();}
+function calToday(){calYear=new Date().getFullYear();calMonth=new Date().getMonth();renderCalendar();}
+
+function renderCalendar(){
+  const MONTH_NAMES=['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+  document.getElementById('cal-title').textContent=`📅 ${calYear}年 ${MONTH_NAMES[calMonth]}`;
+
+  // Build event map: date string → [{type, card, amount, paid}]
+  const events={};
+  const addEvent=(dateStr, obj)=>{
+    if(!dateStr)return;
+    const d=dateStr.slice(0,10);
+    if(!events[d])events[d]=[];
+    events[d].push(obj);
+  };
+
+  // Use getLatest for due/statement dates
+  const latest=getLatest(allCards);
+  // Also include all cards for the current month view
+  const yyyymm=`${calYear}-${String(calMonth+1).padStart(2,'0')}`;
+  const relevantCards=allCards.filter(c=>
+    (c.statement_date&&c.statement_date.startsWith(yyyymm.slice(0,7)))||
+    (c.due_date&&c.due_date.startsWith(yyyymm.slice(0,7)))||
+    // also show if statement date is this month or due date is this month (cross-month)
+    (c.due_date&&c.due_date.slice(0,7)===yyyymm)||
+    (c.statement_date&&c.statement_date.slice(0,7)===yyyymm)
+  );
+  // dedupe by card_name for statement_date, show latest
+  const stmtShown={};
+  allCards.forEach(c=>{
+    if(c.statement_date&&c.statement_date.slice(0,7)===yyyymm){
+      const key=c.card_name+'_stmt';
+      if(!stmtShown[key]||c.statement_date>stmtShown[key]){
+        stmtShown[key]=c.statement_date;
+      }
+    }
+    if(c.due_date&&c.due_date.slice(0,7)===yyyymm){
+      addEvent(c.due_date,{type:'due',card:c.card_name,amount:c.outstanding,paid:c.paid,bank:c.bank});
+    }
+  });
+  // Add stmt events
+  Object.entries(stmtShown).forEach(([key,date])=>{
+    const card_name=key.replace('_stmt','');
+    const c=allCards.find(x=>x.card_name===card_name&&x.statement_date===date);
+    if(c)addEvent(date,{type:'stmt',card:c.card_name,amount:c.outstanding,paid:c.paid,bank:c.bank});
+  });
+
+  // Build grid
+  const firstDay=new Date(calYear,calMonth,1);
+  const lastDay=new Date(calYear,calMonth+1,0);
+  const startDow=(firstDay.getDay()+6)%7; // Mon=0
+  const totalDays=lastDay.getDate();
+  const today=new Date().toISOString().slice(0,10);
+
+  let cells=[];
+  // Empty cells before first day
+  for(let i=0;i<startDow;i++) cells.push(null);
+  for(let d=1;d<=totalDays;d++) cells.push(d);
+  // Pad to complete last row
+  while(cells.length%7!==0) cells.push(null);
+
+  document.getElementById('cal-grid').innerHTML=cells.map(d=>{
+    if(d===null) return '<div style="min-height:80px"></div>';
+    const dateStr=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dayEvents=events[dateStr]||[];
+    const isToday=dateStr===today;
+    const dow=(new Date(calYear,calMonth,d).getDay());
+    const isWeekend=dow===0||dow===6;
+
+    const dots=dayEvents.slice(0,4).map(e=>{
+      const col=e.type==='stmt'?'#2E75B6':e.paid?'#1A7A4A':'#C92A2A';
+      return `<div style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0" title="${getDisplayName(e.card)}"></div>`;
+    }).join('');
+
+    const eventLines=dayEvents.slice(0,3).map(e=>{
+      const col=e.type==='stmt'?'#2E75B6':e.paid?'#1A7A4A':'#C92A2A';
+      const typeLabel=e.type==='stmt'?'結單':'到期';
+      const dn=getDisplayName(e.card);
+      const short=dn.length>8?dn.slice(0,8)+'…':dn;
+      return `<div style="font-size:9px;color:${col};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;font-weight:500">${typeLabel} ${short}</div>`;
+    }).join('');
+    const moreCount=dayEvents.length-3;
+
+    return `<div onclick="showCalDay('${dateStr}')" style="min-height:80px;background:${isToday?'var(--accent-bg)':'var(--surface)'};border:1px solid ${isToday?'var(--accent)':'var(--border)'};border-radius:8px;padding:6px;cursor:${dayEvents.length>0?'pointer':'default'};transition:all .15s;${dayEvents.length>0?'box-shadow:var(--shadow)':''}" onmouseover="if(${dayEvents.length}>0)this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${isToday?'var(--accent)':'var(--border)'}'">
+      <div style="font-size:12px;font-weight:${isToday?700:500};color:${isToday?'var(--accent)':isWeekend?'var(--red)':'var(--text)'};margin-bottom:4px">${d}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px">${dots}</div>
+      ${eventLines}
+      ${moreCount>0?`<div style="font-size:9px;color:var(--muted)">+${moreCount} 更多</div>`:''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('cal-detail').style.display='none';
+}
+
+function showCalDay(dateStr){
+  const events=[];
+  allCards.forEach(c=>{
+    if(c.statement_date&&c.statement_date.slice(0,10)===dateStr)
+      events.push({type:'stmt',card:c.card_name,bank:c.bank,amount:c.outstanding,paid:c.paid,month:c.statement_month});
+    if(c.due_date&&c.due_date.slice(0,10)===dateStr)
+      events.push({type:'due',card:c.card_name,bank:c.bank,amount:c.outstanding,paid:c.paid,month:c.statement_month});
+  });
+  if(!events.length)return;
+
+  const d=new Date(dateStr);
+  document.getElementById('cal-detail-date').textContent=
+    `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+
+  document.getElementById('cal-detail-body').innerHTML=events.map(e=>{
+    const typeLabel=e.type==='stmt'?'🔵 結單日':'到期日';
+    const typeBg=e.type==='stmt'?'#EEF4FF':e.paid?'var(--green-bg)':'var(--red-bg)';
+    const typeCol=e.type==='stmt'?'#2E75B6':e.paid?'var(--green)':'var(--red)';
+    const dueIcon=e.type==='due'?(e.paid?'🟢':'🔴'):'';
+    const dn=getDisplayName(e.card);
+    const l4=getDisplayLast4(e.card);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:${typeBg};border-radius:8px;margin-bottom:6px;border:1px solid ${typeCol}22">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:${typeCol}">${dueIcon}${typeLabel}</div>
+        <div style="font-size:13px;font-weight:500;margin-top:2px">${dn}${l4?' <span style="font-family:DM Mono,monospace;font-size:11px;color:var(--muted)">···'+l4+'</span>':''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${e.bank} · ${e.month}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:'DM Mono',monospace;font-size:14px;font-weight:600;color:${e.type==='due'&&!e.paid?'var(--red)':'var(--text)'}">${fmt2(e.amount||0)}</div>
+        ${e.type==='due'?`<div style="font-size:11px;color:${e.paid?'var(--green)':'var(--red)'};margin-top:2px">${e.paid?'✅ 已還款':'⏳ 未還款'}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('cal-detail').style.display='block';
+}
+
 /* ── Load All ── */
 async function loadAll(){
   document.getElementById('last-update').textContent='載入中...';
@@ -1241,10 +1611,10 @@ async function loadAll(){
   }
 }
 
-function renderAll(){populateFilters();updateKPIs();renderOverview();renderPending();renderTxn();renderChart();renderUploads();renderSettings();}
+function renderAll(){populateFilters();updateKPIs();renderOverview();renderPending();renderTxn();renderChart();renderUploads();renderSettings();renderCalendar();renderUploadStatus();}
 
 function switchTab(name){
-  const tabs=['overview','pending','txn','chart','uploads','settings'];
+  const tabs=['overview','pending','txn','chart','uploads','settings','calendar'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===name));
   document.querySelectorAll('.tab-pane').forEach(el=>el.classList.toggle('active',el.id==='tab-'+name));
 }
