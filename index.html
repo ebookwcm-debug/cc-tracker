@@ -74,6 +74,7 @@ tr:not(.overdue):not(.soon):hover td{background:#F8F9FC}
 .src.company{background:#FFF8EC;color:#C47D0E;border:1px solid rgba(196,125,14,.15)}
 .src.home{background:var(--green-bg);color:var(--green);border:1px solid rgba(26,122,74,.15)}
 .src.other{background:var(--surface2);color:var(--muted);border:1px solid var(--border2)}
+.src.repayment{background:#F0F0FF;color:#5050A0;border:1px solid rgba(80,80,160,.2)}
 .chart-wrap{padding:18px 20px}
 .chart-container{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
 .chart-canvas{flex-shrink:0}
@@ -155,6 +156,7 @@ function checkPw(){
     <button class="tab" onclick="switchTab('uploads')">上傳記錄</button>
     <button class="tab" onclick="switchTab('settings')">信用卡設定</button>
     <button class="tab" onclick="switchTab('calendar')">📅 日曆</button>
+    <button class="tab" onclick="switchTab('reconcile')">🔍 對賬</button>
   </div>
 
   <!-- ① 總覽 -->
@@ -233,6 +235,7 @@ function checkPw(){
             <option value="company">🏢 公司</option>
             <option value="home">🏠 屋企</option>
             <option value="other">其他</option>
+            <option value="repayment">💳 還款</option>
           </select>
           <button class="btn" onclick="exportCSV()">↓ 匯出 CSV</button>
           <button class="btn" onclick="openImportCSV()">↑ 匯入 CSV</button>
@@ -284,6 +287,30 @@ function checkPw(){
         <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:12px;color:var(--muted)">支出總額（不含退款）</span>
           <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace" id="chart-total">HK$0.00</span>
+        </div>
+
+        <!-- Category drill-down -->
+        <div id="chart-drill" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:600" id="chart-drill-title"></div>
+            <button class="btn sm" onclick="closeChartDrill()">✕ 關閉</button>
+          </div>
+          <div class="tbl-wrap"><table>
+            <thead><tr>
+              <th style="width:11%">交易日期</th>
+              <th style="width:26%">描述</th>
+              <th style="width:18%">信用卡</th>
+              <th style="width:10%">金額</th>
+              <th style="width:9%">月份</th>
+              <th style="width:10%">來源</th>
+              <th style="width:16%">備註</th>
+            </tr></thead>
+            <tbody id="chart-drill-body"></tbody>
+          </table></div>
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px">
+            <span style="color:var(--muted)" id="chart-drill-count"></span>
+            <span style="font-weight:600;font-family:'DM Mono',monospace" id="chart-drill-total"></span>
+          </div>
         </div>
       </div>
     </div>
@@ -388,6 +415,78 @@ function checkPw(){
     </div>
   </div>
 
+  <!-- ⑧ 對賬 -->
+  <div id="tab-reconcile" class="tab-pane">
+
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi good"><div class="kpi-lbl">已核對</div><div class="kpi-val" id="rc-ok-cnt">--</div><div class="kpi-sub">張卡已相符</div></div>
+      <div class="kpi danger"><div class="kpi-lbl">有差異</div><div class="kpi-val" id="rc-diff-cnt">--</div><div class="kpi-sub">需要補回</div></div>
+      <div class="kpi warn"><div class="kpi-lbl">未填資料</div><div class="kpi-val" id="rc-empty-cnt">--</div><div class="kpi-sub">未輸入 Statement 數據</div></div>
+      <div class="kpi accent"><div class="kpi-lbl">總差異金額</div><div class="kpi-val" id="rc-diff-amt" style="font-size:18px">--</div><div class="kpi-sub">需要補回</div></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-hdr">
+        <div class="sec-title">對賬明細 <span class="badge-cnt" id="rc-cnt">0</span></div>
+        <div class="frow">
+          <select class="sel" id="rc-month" onchange="renderReconcile()"><option value="">全部月份</option></select>
+          <select class="sel" id="rc-status" onchange="renderReconcile()">
+            <option value="">全部狀態</option>
+            <option value="ok">✅ 相符</option>
+            <option value="diff">⚠️ 有差異</option>
+            <option value="empty">— 未填</option>
+          </select>
+          <button class="btn sm" onclick="saveAllReconcile()">💾 儲存全部</button>
+        </div>
+      </div>
+      <div style="padding:10px 18px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);background:var(--surface2)">
+        💡 喺「Stmt 結欠」同「Stmt 筆數」填入 PDF 上嘅數字，系統自動比對 Database。發現差異後上傳 PDF 俾 Claude 補回缺漏交易。
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr>
+          <th style="width:18%">信用卡</th>
+          <th style="width:8%">月份</th>
+          <th style="width:12%">Stmt 結欠 <span style="font-weight:400;text-transform:none">(你填)</span></th>
+          <th style="width:11%">DB 結欠 <span style="font-weight:400;text-transform:none">(系統)</span></th>
+          <th style="width:8%">Stmt 筆數 <span style="font-weight:400;text-transform:none">(你填)</span></th>
+          <th style="width:7%">DB 筆數 <span style="font-weight:400;text-transform:none">(系統)</span></th>
+          <th style="width:11%">金額差異</th>
+          <th style="width:8%">筆數差</th>
+          <th style="width:10%">狀態</th>
+          <th style="width:7%"></th>
+        </tr></thead>
+        <tbody id="rc-body"><tr><td colspan="10" class="loading"><span class="spin"></span>載入中...</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <div id="rc-detail-panel" style="display:none">
+      <div class="sec">
+        <div class="sec-hdr">
+          <div class="sec-title" id="rc-detail-title">差異詳情</div>
+          <button class="btn sm" onclick="document.getElementById('rc-detail-panel').style.display='none'">✕ 關閉</button>
+        </div>
+        <div style="padding:14px 18px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">以下係 Database 現有記錄。如有漏缺，請上傳原 PDF 俾 Claude 補回。</div>
+          <div class="tbl-wrap"><table>
+            <thead><tr>
+              <th style="width:11%">交易日期</th>
+              <th style="width:11%">入庫日期</th>
+              <th style="width:36%">描述</th>
+              <th style="width:13%">金額</th>
+              <th style="width:15%">類別</th>
+              <th style="width:14%">來源</th>
+            </tr></thead>
+            <tbody id="rc-detail-body"></tbody>
+          </table></div>
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px">
+            <span style="color:var(--muted)">DB 合計</span>
+            <span id="rc-detail-total" style="font-weight:600;font-family:'DM Mono',monospace"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <!-- 新增交易 Modal -->
 <div class="modal-bg" id="add-txn-modal">
   <div class="modal">
@@ -408,6 +507,7 @@ function checkPw(){
           <option value="company">🏢 公司</option>
           <option value="home">🏠 屋企</option>
           <option value="other">其他</option>
+          <option value="repayment">💳 還款</option>
         </select>
       </div>
       <div><div class="form-lbl">備註</div><input class="inp" id="at-remark" placeholder="（選填）" style="width:100%"></div>
@@ -535,8 +635,8 @@ const WH={...RH,'Content-Type':'application/json','Prefer':'return=minimal'};
 const WR={...RH,'Content-Type':'application/json','Prefer':'return=representation'};
 
 const PIE_COLORS=['#1F3864','#2E75B6','#4E96D5','#70B8E8','#1A7A4A','#2CAE6A','#C47D0E','#E8A020','#C92A2A','#E85555','#7B2D8B','#9B59B6','#666'];
-const SRC_CFG={personal:{label:'👤 個人',cls:'personal'},company:{label:'🏢 公司',cls:'company'},home:{label:'🏠 屋企',cls:'home'},other:{label:'其他',cls:'other'}};
-const SRC_NEXT={personal:'company',company:'home',home:'other',other:'personal'};
+const SRC_CFG={personal:{label:'👤 個人',cls:'personal'},company:{label:'🏢 公司',cls:'company'},home:{label:'🏠 屋企',cls:'home'},other:{label:'其他',cls:'other'},repayment:{label:'💳 還款',cls:'other'}};
+const SRC_NEXT={personal:'company',company:'home',home:'other',other:'repayment',repayment:'personal'};
 
 let allCards=[], allTxns=[], filteredTxns=[], allCats=[], allUploads=[], allSettings=[];
 let pendingDeleteId=null;
@@ -651,6 +751,7 @@ function populateFilters(){
   set('ov-month',months,'全部月份');set('ov-bank',banks,'全部銀行');set('ov-method',methods,'還款方式：全部');
   set('tx-month',months,'全部月份');set('tx-card',cards,'全部信用卡');
   set('ch-month',months,'全部月份');
+  set('rc-month',months,'全部月份');
   set('up-bank',upBanks,'全部銀行');set('up-month',upMonths,'全部月份');
 
   // txn cat filter from allCats
@@ -781,7 +882,7 @@ function renderTxnRow(t, editMode=false){
     const cardOpts=[...new Set(allCards.map(c=>c.card_name))].sort()
       .map(k=>`<option value="${k}"${k===t.card_name?' selected':''}>${getDisplayName(k)}${getDisplayLast4(k)?' ···'+getDisplayLast4(k):''}</option>`).join('');
     const catOpts=allCats.map(c=>`<option value="${c}"${c===t.category?' selected':''}>${c}</option>`).join('');
-    const srcOpts=[['personal','👤 個人'],['company','🏢 公司'],['home','🏠 屋企'],['other','其他']]
+    const srcOpts=[['personal','👤 個人'],['company','🏢 公司'],['home','🏠 屋企'],['other','其他'],['repayment','💳 還款']]
       .map(([v,l])=>`<option value="${v}"${v===(t.expense_source||'personal')?' selected':''}>${l}</option>`).join('');
     return `<tr id="txrow-${id}" style="background:#EEF4FF">
       <td><input class="inp" id="te-tdate-${id}" value="${t.trans_date||''}" style="width:100px;font-size:11px;font-family:'DM Mono',monospace"></td>
@@ -918,7 +1019,7 @@ async function confirmDelete(){
 function exportCSV(){
   const rows=filteredTxns.length?filteredTxns:allTxns;
   const hdrs=['交易日期','入庫日期','交易描述','銀行','信用卡','金額(HKD)','類別','月份','支出來源','備註'];
-  const srcLabel={personal:'個人',company:'公司',home:'屋企',other:'其他'};
+  const srcLabel={personal:'個人',company:'公司',home:'屋企',other:'其他',repayment:'還款'};
   const lines=[hdrs.join(','),...rows.map(t=>[
     t.trans_date||'',(t.created_at?t.created_at.slice(0,10):''),`"${(t.description||'').replace(/"/g,'""')}"`,
     t.bank||'',t.card_name||'',Number(t.amount||0).toFixed(2),
@@ -933,7 +1034,7 @@ function exportCSV(){
 function renderChart(){
   const mf=document.getElementById('ch-month').value;
   const srcf=document.getElementById('ch-source').value;
-  let data=allTxns.filter(t=>Number(t.amount||0)>0&&t.category!=='退款');
+  let data=allTxns.filter(t=>Number(t.amount||0)>0&&t.category!=='退款'&&t.category!=='還款');
   if(mf)data=data.filter(t=>t.statement_month===mf);
   if(srcf)data=data.filter(t=>(t.expense_source||'personal')===srcf);
   const cats={};for(const t of data)cats[t.category||'其他']=(cats[t.category||'其他']||0)+Number(t.amount);
@@ -953,12 +1054,20 @@ function renderChart(){
   ctx.beginPath();ctx.arc(cx,cy,52,0,2*Math.PI);ctx.fillStyle='#fff';ctx.fill();
   ctx.fillStyle='#1a1a2e';ctx.font='500 11px DM Sans,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillText(mf||'全部',cx,cy-7);ctx.font='600 13px DM Mono,monospace';ctx.fillText(fmt0(total).replace('HK$','$'),cx,cy+9);
+  // Store current chart filter context for drill-down
+  window._chartMf=mf; window._chartSrcf=srcf;
+  // Close drill if open
+  closeChartDrill();
+
   document.getElementById('chart-legend').innerHTML=sorted.map(([cat,val],i)=>`
-    <div class="legend-item">
+    <div class="legend-item" id="legend-item-${i}" onclick="toggleChartDrill('${cat.replace(/'/g,"\\'")}',${i})"
+      style="cursor:pointer;border-radius:6px;padding:5px 6px;margin:0 -6px;transition:background .15s"
+      onmouseover="this.style.background='var(--surface2)'" onmouseout="if(!this.classList.contains('active'))this.style.background=''">
       <div class="legend-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div>
       <div class="legend-name">${cat}</div>
       <div class="legend-amt">${fmt2(val)}</div>
       <div class="legend-pct">${(val/total*100).toFixed(1)}%</div>
+      <div style="font-size:11px;color:var(--accent);margin-left:4px;opacity:.6">▼</div>
     </div>`).join('');
 }
 
@@ -1345,6 +1454,79 @@ async function autoFillStatementDays(){
   toast(filled>0?`自動填入 ${filled} 張卡嘅結單日`:'所有卡已有結單日設定');
 }
 
+
+/* ── Chart Drill-down ── */
+let _activeDrillCat=null, _activeDrillIdx=null;
+
+function toggleChartDrill(cat, idx){
+  if(_activeDrillCat===cat){
+    closeChartDrill();return;
+  }
+  // Deactivate previous
+  if(_activeDrillIdx!==null){
+    const prev=document.getElementById('legend-item-'+_activeDrillIdx);
+    if(prev){prev.classList.remove('active');prev.style.background='';}
+  }
+  _activeDrillCat=cat;_activeDrillIdx=idx;
+
+  // Highlight active legend row
+  const el=document.getElementById('legend-item-'+idx);
+  if(el){el.classList.add('active');el.style.background='var(--accent-bg)';}
+
+  // Filter txns
+  const mf=window._chartMf||'';
+  const srcf=window._chartSrcf||'';
+  let txns=allTxns.filter(t=>
+    (t.category||'其他')===cat&&
+    Number(t.amount||0)>0&&
+    t.category!=='退款'&&t.category!=='還款'
+  );
+  if(mf)txns=txns.filter(t=>t.statement_month===mf);
+  if(srcf)txns=txns.filter(t=>(t.expense_source||'personal')===srcf);
+  txns.sort((a,b)=>(b.trans_date||'')>(a.trans_date||'')?1:-1);
+
+  const total=txns.reduce((s,t)=>s+Number(t.amount||0),0);
+  const SRC={personal:'👤',company:'🏢',home:'🏠',other:'⚫',repayment:'💳'};
+
+  document.getElementById('chart-drill-title').textContent=
+    `${cat} — ${txns.length} 筆交易`;
+  document.getElementById('chart-drill-count').textContent=
+    `${txns.length} 筆`;
+  document.getElementById('chart-drill-total').textContent=fmt2(total);
+
+  document.getElementById('chart-drill-body').innerHTML=txns.length?
+    txns.map(t=>{
+      const amt=Number(t.amount||0);
+      const dn=getDisplayName(t.card_name);
+      const l4=getDisplayLast4(t.card_name);
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:12px">${t.trans_date||'—'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid var(--border);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px" title="${t.description||''}">${t.description||'—'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:500">${dn}</div>
+          <div style="font-size:11px;color:var(--muted)">${l4?'···'+l4:''}</div>
+        </td>
+        <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><span class="amt red">HK$${amt.toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></td>
+        <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${t.statement_month||'—'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px">${SRC[t.expense_source||'personal']||'—'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)">${t.user_remark||''}</td>
+      </tr>`;
+    }).join(''):
+    '<tr><td colspan="7" class="empty">沒有交易記錄</td></tr>';
+
+  document.getElementById('chart-drill').style.display='';
+  document.getElementById('chart-drill').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function closeChartDrill(){
+  if(_activeDrillIdx!==null){
+    const el=document.getElementById('legend-item-'+_activeDrillIdx);
+    if(el){el.classList.remove('active');el.style.background='';}
+  }
+  _activeDrillCat=null;_activeDrillIdx=null;
+  document.getElementById('chart-drill').style.display='none';
+}
+
 /* ── Upload Status Summary ── */
 function renderUploadStatus(){
   const el=document.getElementById('upload-status-section');
@@ -1448,6 +1630,164 @@ function monthDiff(from, to){
   const [fy,fm]=from.split('-').map(Number);
   const [ty,tm]=to.split('-').map(Number);
   return (ty-fy)*12+(tm-fm);
+}
+
+
+/* ── Reconcile ── */
+function renderReconcile(){
+  const mf=document.getElementById('rc-month').value;
+  const sf=document.getElementById('rc-status').value;
+
+  // Build txn lookup: card_name + statement_month → {count, total}
+  // Exclude 還款 + 退款 category from reconcile calculation (matches statement logic)
+  const txnMap={};
+  allTxns.filter(t=>t.category!=='還款').forEach(t=>{
+    const key=`${t.card_name}||${t.statement_month}`;
+    if(!txnMap[key])txnMap[key]={count:0,total:0};
+    txnMap[key].count++;
+    txnMap[key].total+=Number(t.amount||0);
+  });
+
+  // Get all cards - use latest per card+month combo
+  const seen=new Set();
+  const rows=[];
+  [...allCards].sort((a,b)=>(b.statement_date||'')>(a.statement_date||'')?1:-1).forEach(c=>{
+    const key=`${c.card_name}||${c.statement_month}`;
+    if(seen.has(key))return;
+    seen.add(key);
+    const txKey=key;
+    const dbData=txnMap[txKey]||{count:0,total:0};
+    const stmtAmt=c.stmt_amount!=null?Number(c.stmt_amount):null;
+    const stmtCnt=c.stmt_txn_count!=null?Number(c.stmt_txn_count):null;
+    const dbAmt=dbData.total;
+    const dbCnt=dbData.count;
+    const amtDiff=stmtAmt!=null?Math.abs(stmtAmt-dbAmt):null;
+    const cntDiff=stmtCnt!=null?Math.abs(stmtCnt-dbCnt):null;
+    // status
+    let status='empty';
+    if(stmtAmt!=null||stmtCnt!=null){
+      const amtOk=stmtAmt==null||amtDiff<0.05;
+      const cntOk=stmtCnt==null||cntDiff===0;
+      status=(amtOk&&cntOk)?'ok':'diff';
+    }
+    rows.push({c,dbAmt,dbCnt,stmtAmt,stmtCnt,amtDiff,cntDiff,status});
+  });
+
+  // Filter
+  let filtered=[...rows];
+  if(mf)filtered=filtered.filter(r=>r.c.statement_month===mf);
+  if(sf)filtered=filtered.filter(r=>r.status===sf);
+  filtered.sort((a,b)=>{
+    const so={diff:0,empty:1,ok:2};
+    if(so[a.status]!==so[b.status])return so[a.status]-so[b.status];
+    return (b.c.statement_month||'')>(a.c.statement_month||'')?1:-1;
+  });
+
+  // KPIs (from all rows, not filtered)
+  const okCnt=rows.filter(r=>r.status==='ok').length;
+  const diffCnt=rows.filter(r=>r.status==='diff').length;
+  const emptyCnt=rows.filter(r=>r.status==='empty').length;
+  const totalDiff=rows.filter(r=>r.status==='diff'&&r.amtDiff!=null).reduce((s,r)=>s+r.amtDiff,0);
+  document.getElementById('rc-ok-cnt').textContent=okCnt;
+  document.getElementById('rc-diff-cnt').textContent=diffCnt;
+  document.getElementById('rc-empty-cnt').textContent=emptyCnt;
+  document.getElementById('rc-diff-amt').textContent=fmt2(totalDiff);
+
+  document.getElementById('rc-cnt').textContent=filtered.length;
+  if(!filtered.length){document.getElementById('rc-body').innerHTML='<tr><td colspan="10" class="empty">沒有記錄</td></tr>';return;}
+
+  const SRC_CFG2={personal:'👤',company:'🏢',home:'🏠',other:'⚫'};
+
+  document.getElementById('rc-body').innerHTML=filtered.map((r,i)=>{
+    const {c,dbAmt,dbCnt,stmtAmt,stmtCnt,amtDiff,cntDiff,status}=r;
+    const dn=getDisplayName(c.card_name);const l4=getDisplayLast4(c.card_name);
+    const rowBg=status==='diff'?'background:var(--amber-bg)':status==='ok'?'':'';
+
+    const stmtAmtCell=`<input class="inp" id="rc-amt-${c.id}" type="number" step="0.01"
+      value="${stmtAmt!=null?stmtAmt:''}" placeholder="填入"
+      style="width:100%;font-size:12px;font-family:'DM Mono',monospace"
+      onchange="quickSaveReconcile('${c.id}')">`;
+    const stmtCntCell=`<input class="inp" id="rc-cnt-${c.id}" type="number" step="1"
+      value="${stmtCnt!=null?stmtCnt:''}" placeholder="填入"
+      style="width:65px;font-size:12px;font-family:'DM Mono',monospace"
+      onchange="quickSaveReconcile('${c.id}')">`;
+
+    const amtDiffCell=amtDiff==null?'<span style="color:var(--muted)">—</span>':
+      amtDiff<0.05?'<span style="color:var(--green);font-weight:500">✅ 相符</span>':
+      `<span style="color:var(--red);font-weight:500">-HK$${amtDiff.toFixed(2)}</span>`;
+    const cntDiffCell=cntDiff==null?'<span style="color:var(--muted)">—</span>':
+      cntDiff===0?'<span style="color:var(--green)">✅</span>':
+      `<span style="color:var(--red)">-${cntDiff}筆</span>`;
+
+    const statusBadge=status==='ok'?'<span class="bdg ok">✅ 相符</span>':
+      status==='diff'?'<span class="bdg overdue">⚠️ 差異</span>':
+      '<span class="bdg" style="background:var(--surface2);color:var(--muted);border:1px solid var(--border2)">— 未填</span>';
+
+    return `<tr style="${rowBg}">
+      <td><div class="cc"><div class="name">${dn}</div><div class="bank">${l4?'···'+l4:''} ${c.bank||''}</div></div></td>
+      <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${c.statement_month}</td>
+      <td>${stmtAmtCell}</td>
+      <td><span class="amt ${dbAmt>=0?'':'green'}" style="font-size:12px">${fmt2(dbAmt)}</span></td>
+      <td>${stmtCntCell}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">${dbCnt}</td>
+      <td>${amtDiffCell}</td>
+      <td>${cntDiffCell}</td>
+      <td>${statusBadge}</td>
+      <td><button class="btn sm" onclick="showRcDetail('${c.card_name}','${c.statement_month}')" title="睇交易明細">🔍</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function quickSaveReconcile(cardId){
+  const amtEl=document.getElementById('rc-amt-'+cardId);
+  const cntEl=document.getElementById('rc-cnt-'+cardId);
+  if(!amtEl)return;
+  const stmt_amount=amtEl.value!==''?parseFloat(amtEl.value):null;
+  const stmt_txn_count=cntEl&&cntEl.value!==''?parseInt(cntEl.value):null;
+  const r=await fetch(`${SUPA}/credit_cards?id=eq.${cardId}`,{
+    method:'PATCH',headers:WH,
+    body:JSON.stringify({stmt_amount,stmt_txn_count})
+  });
+  if(r.ok){
+    const card=allCards.find(c=>c.id===cardId);
+    if(card){card.stmt_amount=stmt_amount;card.stmt_txn_count=stmt_txn_count;}
+    toast('已儲存');renderReconcile();
+  } else toast('儲存失敗','err');
+}
+
+async function saveAllReconcile(){
+  const inputs=document.querySelectorAll('[id^="rc-amt-"]');
+  let saved=0;
+  for(const el of inputs){
+    const id=el.id.replace('rc-amt-','');
+    await quickSaveReconcile(id);
+    saved++;
+    await new Promise(r=>setTimeout(r,60));
+  }
+  toast(`已儲存 ${saved} 筆`);
+}
+
+function showRcDetail(card_name,statement_month){
+  const txns=allTxns.filter(t=>t.card_name===card_name&&t.statement_month===statement_month);
+  txns.sort((a,b)=>(b.trans_date||'')>(a.trans_date||'')?1:-1);
+  const total=txns.reduce((s,t)=>s+Number(t.amount||0),0);
+  const dn=getDisplayName(card_name);
+  document.getElementById('rc-detail-title').textContent=`🔍 ${dn} ${statement_month} — ${txns.length} 筆交易`;
+  const SRC={personal:'👤 個人',company:'🏢 公司',home:'🏠 屋企',other:'其他',repayment:'💳 還款'};
+  document.getElementById('rc-detail-body').innerHTML=txns.length?txns.map(t=>{
+    const amt=Number(t.amount||0);const isCredit=amt<0;
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:12px">${t.trans_date||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${t.created_at?t.created_at.slice(0,10):'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.description||''}">${t.description||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><span class="amt ${isCredit?'green':'red'}">${isCredit?'-':''}HK$${Math.abs(amt).toFixed(2)}</span></td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)">${t.category||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px">${SRC[t.expense_source||'personal']||'—'}</td>
+    </tr>`;
+  }).join(''):'<tr><td colspan="6" class="empty">沒有交易記錄</td></tr>';
+  document.getElementById('rc-detail-total').textContent=fmt2(total);
+  document.getElementById('rc-detail-panel').style.display='';
+  document.getElementById('rc-detail-panel').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 /* ── Calendar ── */
@@ -1611,10 +1951,10 @@ async function loadAll(){
   }
 }
 
-function renderAll(){populateFilters();updateKPIs();renderOverview();renderPending();renderTxn();renderChart();renderUploads();renderSettings();renderCalendar();renderUploadStatus();}
+function renderAll(){populateFilters();updateKPIs();renderOverview();renderPending();renderTxn();renderChart();renderUploads();renderSettings();renderCalendar();renderUploadStatus();renderReconcile();}
 
 function switchTab(name){
-  const tabs=['overview','pending','txn','chart','uploads','settings','calendar'];
+  const tabs=['overview','pending','txn','chart','uploads','settings','calendar','reconcile'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===name));
   document.querySelectorAll('.tab-pane').forEach(el=>el.classList.toggle('active',el.id==='tab-'+name));
 }
