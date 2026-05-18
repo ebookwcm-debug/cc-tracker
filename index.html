@@ -859,7 +859,7 @@ function buildCatOptions(selectedVal='',includeEmpty=false){
   return html;
 }
 
-let allCards=[], allTxns=[], filteredTxns=[], allCats=[], allUploads=[], allSettings=[];
+let allCards=[], allTxns=[], filteredTxns=[], allCats=[], allUploads=[], allSettings=[], allNoStmt=[];
 let filteredCombined=[];
 let pendingDeleteId=null,pendingDeleteType='cc';
 
@@ -2177,7 +2177,7 @@ function renderUploadStatus(){
   const today=new Date();
   const yyyymm=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
   const todayDay=today.getDate();
-  const noStmt=new Set(JSON.parse(localStorage.getItem('cc_no_stmt')||'[]'));
+  const noStmt=new Set(allNoStmt.map(r=>r.card_key+'|'+r.month));
 
   // Get all known cards from card_settings + credit_cards
   const allCardKeys=[...new Set([
@@ -2292,14 +2292,20 @@ function renderUploadStatus(){
     </div>`;
 }
 
-function markNoStmt(key,month){
+async function markNoStmt(key,month){
   const today=new Date();
   const yyyymm=month||`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-  const stored=JSON.parse(localStorage.getItem('cc_no_stmt')||'[]');
-  const k=key+'|'+yyyymm;
-  if(!stored.includes(k)){stored.push(k);localStorage.setItem('cc_no_stmt',JSON.stringify(stored));}
-  renderUploadStatus();
-  toast('已標記 '+yyyymm+' 無結單');
+  const already=allNoStmt.find(r=>r.card_key===key&&r.month===yyyymm);
+  if(already){renderUploadStatus();return;}
+  const r=await fetch(`${SUPA}/card_no_stmt`,{method:'POST',headers:WR,body:JSON.stringify({card_key:key,month:yyyymm})});
+  if(r.ok){
+    const d=await r.json();
+    allNoStmt.push(d[0]||{card_key:key,month:yyyymm});
+    renderUploadStatus();
+    toast('已標記 '+yyyymm+' 無結單');
+  } else {
+    toast('標記失敗','err');
+  }
 }
 
 function monthDiff(from, to){
@@ -3203,14 +3209,15 @@ async function loadAll(){
   if(lastEl)lastEl.textContent='載入中...';
   try{
     if(lastEl)lastEl.textContent='載入中... (fetching data)';
-    const [r1,r2,r3,r4,r5,r6,r7]=await Promise.all([
+    const [r1,r2,r3,r4,r5,r6,r7,r8]=await Promise.all([
       fetch(`${SUPA}/credit_cards?order=statement_date.desc&limit=500`,{headers:RH}),
       fetch(`${SUPA}/transactions?order=trans_date.desc&limit=2000`,{headers:RH}),
       fetch(`${SUPA}/categories?order=name.asc`,{headers:RH}),
       fetch(`${SUPA}/statement_uploads?order=upload_date.desc&limit=500`,{headers:RH}),
       fetch(`${SUPA}/card_settings?order=card_key.asc`,{headers:RH}),
       fetch(`${SUPA}/bank_statement_uploads?order=statement_month.desc&limit=200`,{headers:RH}),
-      fetch(`${SUPA}/bank_transactions?order=trans_date.desc&limit=2000`,{headers:RH})
+      fetch(`${SUPA}/bank_transactions?order=trans_date.desc&limit=2000`,{headers:RH}),
+      fetch(`${SUPA}/card_no_stmt?order=month.desc`,{headers:RH})
     ]);
     if(!r1.ok)throw new Error('cards '+r1.status);
     if(!r2.ok)throw new Error('txns '+r2.status);
@@ -3220,6 +3227,7 @@ async function loadAll(){
     allSettings=r5.ok?await r5.json():[];
     try{allBankStmts=r6&&r6.ok?await r6.json():[];}catch(e){allBankStmts=[];}
     try{allBankTxns=r7&&r7.ok?await r7.json():[];}catch(e){allBankTxns=[];}
+    allNoStmt=r8.ok?await r8.json():[];
     filteredBankTxns=[...allBankTxns];
     populateBankFilters();
     filteredTxns=[...allTxns];
