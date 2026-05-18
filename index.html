@@ -104,15 +104,42 @@ textarea.remark:focus{border-color:var(--accent);background:#fff}
 .spin{display:inline-block;width:15px;height:15px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:7px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}.kpi-val{font-size:20px}th,td{padding:8px 10px}}
+#auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center}
+#auth-overlay.hidden{display:none}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:40px 36px;width:320px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.auth-logo{font-size:18px;font-weight:600;color:var(--accent);margin-bottom:6px}
+.auth-logo span{opacity:.4}
+.auth-sub{font-size:12px;color:var(--muted);margin-bottom:28px}
+.auth-lbl{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+#auth-pwd{width:100%;padding:9px 12px;border:1px solid var(--border2);border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;margin-bottom:14px}
+#auth-pwd:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,56,100,.1)}
+#auth-btn{width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif}
+#auth-btn:hover{opacity:.9}
+#auth-err{font-size:12px;color:var(--red);margin-top:10px;min-height:18px}
 </style>
 </head>
 <body>
+<div id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-logo">CC<span>/</span>Tracker</div>
+    <div class="auth-sub">請輸入密碼以繼續</div>
+    <div class="auth-lbl">密碼</div>
+    <input type="password" id="auth-pwd" placeholder="••••••••" autofocus onkeydown="if(event.key==='Enter')submitAuth()">
+    <button id="auth-btn" onclick="submitAuth()">登入</button>
+    <div id="auth-err"></div>
+  </div>
+</div>
+
 <div class="hdr">
   <div style="display:flex;align-items:center;gap:14px">
     <div class="logo">CC<span>/</span>Tracker</div>
+    <div style="font-size:10px;color:rgba(255,255,255,.45);font-family:'DM Mono',monospace;padding:2px 7px;background:rgba(255,255,255,.08);border-radius:4px;letter-spacing:.3px">v2026-05-18 11:08</div>
     <div class="hdr-meta" id="last-update">載入中...</div>
   </div>
-  <button class="hdr-btn" onclick="loadAll()">↺ 重新整理</button>
+  <div style="display:flex;gap:8px">
+    <button class="hdr-btn" onclick="loadAll()">↺ 重新整理</button>
+    <button class="hdr-btn" onclick="logout()" title="登出">⎋ 登出</button>
+  </div>
 </div>
 
 <div class="main">
@@ -2173,7 +2200,7 @@ function renderUploadStatus(){
     const last=latestMonth[key]||'—';
 
     // Determine status
-    let status,statusColor,statusBg;
+    let status,statusColor,statusBg,noStmtTarget=null;
     if(!stmtDay){
       // No statement day known — just show last upload
       const monthsAgo=last==='—'?99:monthDiff(last,yyyymm);
@@ -2182,26 +2209,44 @@ function renderUploadStatus(){
       else{status='🔴 建議檢查';statusColor='var(--red)';statusBg='var(--red-bg)';}
     } else {
       // We know the statement day
-      const stmtPassed=todayDay>=stmtDay; // has this month's statement date passed?
+      const stmtPassed=todayDay>=stmtDay;
       const hasThisMonth=last===yyyymm;
-      const monthsAgo=last==='—'?99:monthDiff(last,yyyymm);
 
       if(hasThisMonth){
         status='✅ 本月已上傳';statusColor='var(--green)';statusBg='var(--green-bg)';
       } else if(!stmtPassed){
         status=`⏳ 結單日：${stmtDay}號（未到）`;statusColor='var(--muted)';statusBg='var(--surface2)';
-      } else if(monthsAgo<=1){
-        if(noStmt.has(key+'|'+yyyymm)){
-          status='✅ 本月已上傳';statusColor='var(--green)';statusBg='var(--green-bg)';
-        } else {
-          status='⚠️ 結單日已過，未上傳';statusColor='var(--amber)';statusBg='var(--amber-bg)';
-        }
       } else {
-        status='🔴 多期未上傳';statusColor='var(--red)';statusBg='var(--red-bg)';
+        // stmtPassed and !hasThisMonth: calc effective last accounting for noStmt months
+        let effectiveLast=last;
+        if(last!=='—'){
+          let m=addOneMonth(last);
+          while(m<yyyymm){
+            if(noStmt.has(key+'|'+m)){effectiveLast=m;m=addOneMonth(m);}
+            else break;
+          }
+        }
+        const effectiveMonthsAgo=effectiveLast==='—'?99:monthDiff(effectiveLast,yyyymm);
+
+        if(effectiveMonthsAgo<=1){
+          if(noStmt.has(key+'|'+yyyymm)){
+            status='✅ 本月已上傳';statusColor='var(--green)';statusBg='var(--green-bg)';
+          } else {
+            status='⚠️ 結單日已過，未上傳';statusColor='var(--amber)';statusBg='var(--amber-bg)';
+          }
+        } else {
+          status='🔴 多期未上傳';statusColor='var(--red)';statusBg='var(--red-bg)';
+          // Find first unaccounted month after last actual upload for the button
+          if(last!=='—'){
+            let t=addOneMonth(last);
+            while(t<yyyymm&&noStmt.has(key+'|'+t))t=addOneMonth(t);
+            if(t<yyyymm)noStmtTarget=t;
+          }
+        }
       }
     }
 
-    return {key,dn,l4,stmtDay,last,status,statusColor,statusBg};
+    return {key,dn,l4,stmtDay,last,status,statusColor,statusBg,noStmtTarget};
   });
 
   // Sort: red first, then amber, then ok
@@ -2237,7 +2282,9 @@ function renderUploadStatus(){
           <td style="padding:9px 12px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">${r.last}</td>
           <td style="padding:9px 12px;border-bottom:1px solid var(--border)">
             <span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;background:${r.statusBg};color:${r.statusColor}">${r.status}</span>
-            ${r.status==='⚠️ 結單日已過，未上傳'?`<button class="btn sm" data-key="${r.key.replace(/"/g,'&quot;')}" onclick="markNoStmt(this.dataset.key)" style="margin-left:8px;font-size:11px;padding:2px 8px" title="本月無結單，標記為已上傳">✓ 本月無結單</button>`:''}
+            ${r.status==='⚠️ 結單日已過，未上傳'
+              ?`<button class="btn sm" data-key="${r.key.replace(/"/g,'&quot;')}" onclick="markNoStmt(this.dataset.key)" style="margin-left:8px;font-size:11px;padding:2px 8px" title="本月無結單，標記為已上傳">✓ 本月無結單</button>`
+              :(r.noStmtTarget?`<button class="btn sm" data-key="${r.key.replace(/"/g,'&quot;')}" data-month="${r.noStmtTarget}" onclick="markNoStmt(this.dataset.key,this.dataset.month)" style="margin-left:8px;font-size:11px;padding:2px 8px" title="標記 ${r.noStmtTarget} 無月結單">✓ ${r.noStmtTarget} 無結單</button>`:'')}
           </td>
         </tr>`).join('')}
       </tbody>
@@ -2245,13 +2292,14 @@ function renderUploadStatus(){
     </div>`;
 }
 
-function markNoStmt(key){
-  const yyyymm=new Date().toISOString().slice(0,7);
+function markNoStmt(key,month){
+  const today=new Date();
+  const yyyymm=month||`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
   const stored=JSON.parse(localStorage.getItem('cc_no_stmt')||'[]');
   const k=key+'|'+yyyymm;
   if(!stored.includes(k)){stored.push(k);localStorage.setItem('cc_no_stmt',JSON.stringify(stored));}
   renderUploadStatus();
-  toast('已標記本月無結單');
+  toast('已標記 '+yyyymm+' 無結單');
 }
 
 function monthDiff(from, to){
@@ -2260,6 +2308,12 @@ function monthDiff(from, to){
   const [fy,fm]=from.split('-').map(Number);
   const [ty,tm]=to.split('-').map(Number);
   return (ty-fy)*12+(tm-fm);
+}
+
+function addOneMonth(yyyymm){
+  const [y,m]=yyyymm.split('-').map(Number);
+  const d=new Date(y,m,1); // new Date(y, m, 1) = first day of month m+1
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
 
@@ -3220,7 +3274,45 @@ function switchTab(name){
   document.querySelectorAll('.tab-pane').forEach(el=>el.classList.toggle('active',el.id==='tab-'+name));
 }
 
-loadAll();
+/* ── Auth ── */
+const AUTH_HASH='9fb8df10f624238765ec32cf64ede9d97687f699797b1a88975282633ec4276c';
+const AUTH_KEY='cc_auth_v1';
+
+async function hashStr(s){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function initAuth(){
+  if(localStorage.getItem(AUTH_KEY)===AUTH_HASH){
+    document.getElementById('auth-overlay').classList.add('hidden');
+    loadAll();
+  }
+  // else: overlay stays visible, user must log in
+}
+
+async function submitAuth(){
+  const pwd=document.getElementById('auth-pwd').value;
+  const h=await hashStr(pwd);
+  if(h===AUTH_HASH){
+    localStorage.setItem(AUTH_KEY,AUTH_HASH);
+    document.getElementById('auth-overlay').classList.add('hidden');
+    loadAll();
+  } else {
+    const err=document.getElementById('auth-err');
+    err.textContent='密碼錯誤，請再試';
+    document.getElementById('auth-pwd').value='';
+    document.getElementById('auth-pwd').focus();
+    setTimeout(()=>err.textContent='',3000);
+  }
+}
+
+function logout(){
+  localStorage.removeItem(AUTH_KEY);
+  location.reload();
+}
+
+initAuth();
 </script>
 </body>
 </html>
